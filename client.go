@@ -1,59 +1,25 @@
-package main
+package gosmtpd
 
 import (
-  "fmt"
   "bufio"
+  "fmt"
   "net"
-  "os"
-  "strings"
   "time"
+  "strings"
 )
 
 type Client struct {
-  conn net.Conn
-  bufin *bufio.Reader
-  bufout *bufio.Writer
-  helo string
-  mail_from string
-  rcpt_to string
-}
-
-func main() {
-  err := start()
-  if err != nil {
-    fmt.Printf("%s\n", err)
-    os.Exit(1)
-  }
-}
-
-func start() (err error) {
-  listener, err := net.Listen("tcp", ":6666")
-  if err != nil {
-    return
-  }
-
-  fmt.Printf("Listening on %s\n", listener.Addr())
-
-  for {
-    conn, err := listener.Accept()
-    fmt.Printf("accepted\n")
-    if err != nil {
-      return err
-    }
-
-    client := Client{
-      conn: conn,
-      bufin: bufio.NewReader(conn),
-      bufout: bufio.NewWriter(conn),
-    };
-
-    go client.Process()
-  }
+  Conn net.Conn
+  Bufin *bufio.Reader
+  Bufout *bufio.Writer
+  Helo string
+  MailFrom string
+  RcptTo string
 }
 
 func (c *Client) Process() {
   defer c.Close()
-  c.conn.SetDeadline(time.Now().Add(time.Duration(60) * time.Second))
+  c.Conn.SetDeadline(time.Now().Add(time.Duration(60) * time.Second))
   c.WriteStringAndFlush("220 go-smtp-server")
 
   // http://tools.ietf.org/html/rfc821#page-27
@@ -93,24 +59,24 @@ func (c *Client) Process() {
     case strings.Index(command, "MAIL FROM:") == 0:
       // callback
       if len(command) > 10 {
-        c.mail_from = command[10:]
+        c.MailFrom = command[10:]
       }
       c.WriteStringAndFlush("250 OK")
 
     case strings.Index(command, "RCPT TO:") == 0:
       // callback
       if len(command) > 8 {
-        c.rcpt_to = command[8:]
+        c.RcptTo = command[8:]
       }
       c.WriteStringAndFlush("250 OK")
 
     case strings.Index(command, "DATA") == 0:
-      c.WriteStringAndFlush(client, "354 Start mail input; end with <CRLF>.<CRLF>")
+      c.WriteStringAndFlush("354 Start mail input; end with <CRLF>.<CRLF>")
       c.HandleData()
 
     case strings.Index(command, "RSET") == 0:
-      c.mail_from = ""
-      c.rcpt_to = ""
+      c.MailFrom = ""
+      c.RcptTo = ""
       c.WriteStringAndFlush("250 OK")
 
     case strings.Index(command, "NOOP") == 0:
@@ -127,32 +93,34 @@ func (c *Client) Process() {
 }
 
 func (c *Client) Close() {
-  c.conn.Close()
+  c.Conn.Close()
 }
 
 func (c *Client) HandleHelo(command string) {
   if len(command) > 5 {
-    c.helo = command[5:]
+    c.Helo = command[5:]
   }
   c.WriteStringAndFlush("250 localhost")
 }
 
 func (c *Client) HandleData() (err error) {
-  data, err := c.Read("\r\n.\r\n")
+  _, err = c.Read("\r\n.\r\n")
   if err != nil {
     return
   }
   // callback
+  return
 }
 
 func (c *Client) WriteStringAndFlush(input string) (err error) {
   input += "\r\n"
   fmt.Printf("S: %s", input)
-  _, err := c.bufout.WriteString(input)
+  _, err = c.Bufout.WriteString(input)
   if err != nil {
     return
   }
-  err := c.bufout.Flush()
+  err = c.Bufout.Flush()
+  return
 }
 
 func (c *Client) ReadCommand() (request string, err error) {
@@ -169,7 +137,7 @@ func (c *Client) ReadCommand() (request string, err error) {
 
 func (c *Client) Read(suffix string) (request string, err error) {
   for err == nil {
-    reply, err := c.bufin.ReadString('\n')
+    reply, err := c.Bufin.ReadString('\n')
 
 		if reply != "" {
       request += reply
